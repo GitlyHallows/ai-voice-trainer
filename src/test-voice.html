@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Voice Test</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 20px auto;
+      padding: 20px;
+    }
+    .container {
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .error {
+      background-color: #fee2e2;
+      color: #991b1b;
+    }
+    .success {
+      background-color: #dcfce7;
+      color: #166534;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      background: #fff;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .debug {
+      margin-top: 20px;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      background: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ElevenLabs Voice Test</h1>
+    <div>
+      <button id="playBtn">Test Voice Synthesis</button>
+      <button id="initAudioBtn">Initialize Audio</button>
+    </div>
+    <div id="status" class="status"></div>
+    <div id="debug" class="debug"></div>
+  </div>
+
+  <script>
+    const apiKey = 'sk_f0273b3cafb56f7270e2ac6f91d37b60b821a99d6a28feef';
+    const voiceId = '21m00Tcm4TlvDq8ikWAM';
+    let audioContext = null;
+
+    function log(message, data = null) {
+      const debug = document.getElementById('debug');
+      const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+      const logMessage = `[${timestamp}] ${message}${data ? '\n' + JSON.stringify(data, null, 2) : ''}`;
+      debug.textContent = logMessage + '\n' + debug.textContent;
+      console.log(message, data);
+    }
+
+    function updateStatus(message, isError = false) {
+      const status = document.getElementById('status');
+      status.textContent = message;
+      status.className = 'status ' + (isError ? 'error' : 'success');
+    }
+
+    async function initializeAudio() {
+      try {
+        log('Initializing audio context...');
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        if (audioContext.state === 'suspended') {
+          log('Audio context suspended, attempting to resume...');
+          await audioContext.resume();
+        }
+        
+        log('Audio context initialized', {
+          state: audioContext.state,
+          sampleRate: audioContext.sampleRate
+        });
+        
+        updateStatus('Audio initialized successfully');
+        document.getElementById('playBtn').disabled = false;
+      } catch (error) {
+        log('Failed to initialize audio:', error);
+        updateStatus('Failed to initialize audio: ' + error.message, true);
+      }
+    }
+
+    async function synthesizeAndPlay() {
+      if (!audioContext) {
+        updateStatus('Please initialize audio first', true);
+        return;
+      }
+
+      const playBtn = document.getElementById('playBtn');
+      playBtn.disabled = true;
+
+      try {
+        log('Starting voice synthesis test...');
+        updateStatus('Synthesizing speech...');
+
+        const response = await fetch(
+          `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+          {
+            method: 'POST',
+            headers: {
+              'Accept': 'audio/mpeg',
+              'Content-Type': 'application/json',
+              'xi-api-key': apiKey
+            },
+            body: JSON.stringify({
+              text: "Testing voice synthesis. If you can hear this message, the audio system is working correctly.",
+              model_id: 'eleven_monolingual_v1',
+              voice_settings: {
+                stability: 0.5,
+                similarity_boost: 0.75,
+                style: 0.5,
+                use_speaker_boost: true
+              }
+            })
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        log('Speech synthesized, decoding audio...');
+        updateStatus('Decoding audio...');
+        
+        const audioData = await response.arrayBuffer();
+        log('Audio data received', { 
+          byteLength: audioData.byteLength 
+        });
+
+        const audioBuffer = await audioContext.decodeAudioData(audioData);
+        log('Audio decoded', {
+          duration: audioBuffer.duration,
+          numberOfChannels: audioBuffer.numberOfChannels,
+          sampleRate: audioBuffer.sampleRate
+        });
+
+        updateStatus('Playing audio...');
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContext.destination);
+        
+        source.onended = () => {
+          log('Audio playback complete');
+          updateStatus('Audio playback complete');
+          playBtn.disabled = false;
+        };
+
+        log('Starting audio playback...');
+        source.start(0);
+      } catch (error) {
+        log('Error:', error);
+        updateStatus('Error: ' + error.message, true);
+        playBtn.disabled = false;
+      }
+    }
+
+    // Initialize button handlers
+    document.getElementById('initAudioBtn').addEventListener('click', initializeAudio);
+    document.getElementById('playBtn').addEventListener('click', synthesizeAndPlay);
+    document.getElementById('playBtn').disabled = true;
+
+    // Log initial state
+    log('Page loaded', {
+      hasAudioContext: !!window.AudioContext || !!window.webkitAudioContext,
+      userAgent: navigator.userAgent
+    });
+  </script>
+</body>
+</html>

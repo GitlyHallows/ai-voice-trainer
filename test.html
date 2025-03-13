@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Voice Test</title>
+  <style>
+    body { font-family: system-ui; padding: 20px; max-width: 800px; margin: 0 auto; }
+    button { 
+      padding: 10px 20px; 
+      margin: 10px 5px; 
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #log { 
+      font-family: monospace; 
+      white-space: pre-wrap; 
+      background: #f0f0f0; 
+      padding: 10px; 
+      margin-top: 10px;
+      max-height: 400px;
+      overflow-y: auto;
+      border-radius: 4px;
+    }
+    .error { color: #dc2626; }
+    .success { color: #16a34a; }
+    .info { color: #2563eb; }
+    audio { 
+      display: block;
+      width: 100%;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Voice Test</h1>
+  <div>
+    <button onclick="testAPI()">1. Test API</button>
+    <button onclick="testAudio()">2. Test Browser Audio</button>
+    <button onclick="testVoice()">3. Test Voice Synthesis</button>
+  </div>
+  <audio id="audioPlayer" controls></audio>
+  <div id="log"></div>
+
+  <script>
+    function log(msg, type = 'info') {
+      const logEl = document.getElementById('log');
+      const time = new Date().toISOString().split('T')[1].split('.')[0];
+      const entry = document.createElement('div');
+      entry.className = type;
+      entry.textContent = `[${time}] ${msg}`;
+      logEl.insertBefore(entry, logEl.firstChild);
+      console.log(`[${type}]`, msg);
+    }
+
+    // Test if we can reach the API
+    async function testAPI() {
+      const apiKey = 'sk_f0273b3cafb56f7270e2ac6f91d37b60b821a99d6a28feef';
+      
+      try {
+        log('Testing API connection...', 'info');
+        const response = await fetch('https://api.elevenlabs.io/v1/voices', {
+          headers: {
+            'Accept': 'application/json',
+            'xi-api-key': apiKey,
+            'Origin': window.location.origin,
+            'Access-Control-Allow-Origin': '*'
+          },
+          mode: 'cors'
+        });
+
+        log(`Response status: ${response.status}`, response.ok ? 'success' : 'error');
+        
+        // Log response headers
+        const headers = {};
+        response.headers.forEach((value, key) => {
+          headers[key] = value;
+        });
+        log('Response headers: ' + JSON.stringify(headers, null, 2), 'info');
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`HTTP error! status: ${response.status}\nResponse: ${text}`);
+        }
+
+        const data = await response.json();
+        log(`API connection successful. Found ${data.voices.length} voices.`, 'success');
+        log('Available voices: ' + JSON.stringify(data.voices.map(v => ({
+          id: v.voice_id,
+          name: v.name
+        })), null, 2), 'info');
+      } catch (error) {
+        log(`API Error: ${error.message}`, 'error');
+        log('Full error:', 'error');
+        log(JSON.stringify(error, Object.getOwnPropertyNames(error), 2), 'error');
+      }
+    }
+
+    // Test if browser audio works
+    async function testAudio() {
+      try {
+        log('Testing browser audio...', 'info');
+        
+        // Create an oscillator for a test tone
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        log(`Audio context created. State: ${audioContext.state}`, 'info');
+        
+        if (audioContext.state === 'suspended') {
+          log('Audio context suspended, attempting to resume...', 'info');
+          await audioContext.resume();
+          log(`Audio context resumed. New state: ${audioContext.state}`, 'info');
+        }
+        
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        gainNode.gain.value = 0.1; // Quiet volume
+        oscillator.frequency.value = 440; // A4 note
+        
+        log('Playing test tone...', 'info');
+        oscillator.start();
+        
+        // Play for 1 second
+        setTimeout(() => {
+          oscillator.stop();
+          log('Audio test complete', 'success');
+        }, 1000);
+      } catch (error) {
+        log(`Audio Error: ${error.message}`, 'error');
+        log('Full error:', 'error');
+        log(JSON.stringify(error, Object.getOwnPropertyNames(error), 2), 'error');
+      }
+    }
+
+    // Test voice synthesis
+    async function testVoice() {
+      const apiKey = 'sk_f0273b3cafb56f7270e2ac6f91d37b60b821a99d6a28feef';
+      const voiceId = '21m00Tcm4TlvDq8ikWAM';
+      const text = 'This is a test of the voice synthesis system.';
+
+      try {
+        log('Starting voice synthesis test...', 'info');
+        const response = await fetch(
+          `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
+          {
+            method: 'POST',
+            headers: {
+              'Accept': 'audio/mpeg',
+              'Content-Type': 'application/json',
+              'xi-api-key': apiKey,
+              'Origin': window.location.origin,
+              'Access-Control-Allow-Origin': '*'
+            },
+            mode: 'cors',
+            body: JSON.stringify({
+              text,
+              model_id: 'eleven_monolingual_v1',
+              voice_settings: {
+                stability: 0.5,
+                similarity_boost: 0.75
+              }
+            })
+          }
+        );
+
+        log(`Response status: ${response.status}`, response.ok ? 'success' : 'error');
+        
+        // Log response headers
+        const headers = {};
+        response.headers.forEach((value, key) => {
+          headers[key] = value;
+        });
+        log('Response headers: ' + JSON.stringify(headers, null, 2), 'info');
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP error! status: ${response.status}\n${errorText}`);
+        }
+
+        log('Response received, creating audio...', 'info');
+        const blob = await response.blob();
+        log(`Audio blob created: ${blob.size} bytes, type: ${blob.type}`, 'info');
+
+        const audioPlayer = document.getElementById('audioPlayer');
+        const url = URL.createObjectURL(blob);
+        
+        audioPlayer.src = url;
+        audioPlayer.oncanplay = () => {
+          log('Audio ready to play', 'success');
+          log(`Audio duration: ${audioPlayer.duration} seconds`, 'info');
+          log(`Audio ready state: ${audioPlayer.readyState}`, 'info');
+          audioPlayer.play().catch(e => {
+            log(`Play error: ${e.message}`, 'error');
+          });
+        };
+        
+        audioPlayer.onloadedmetadata = () => {
+          log('Audio metadata loaded', 'info');
+          log(`Duration: ${audioPlayer.duration}`, 'info');
+          log(`Ready State: ${audioPlayer.readyState}`, 'info');
+        };
+        
+        audioPlayer.onplay = () => log('Audio started playing', 'success');
+        audioPlayer.onended = () => {
+          log('Audio finished playing', 'success');
+          URL.revokeObjectURL(url);
+        };
+        audioPlayer.onerror = (e) => {
+          log(`Audio Error: ${audioPlayer.error?.message || 'Unknown error'}`, 'error');
+          log('Audio error code: ' + (audioPlayer.error?.code || 'none'), 'error');
+        };
+
+      } catch (error) {
+        log(`Error: ${error.message}`, 'error');
+        log('Full error:', 'error');
+        log(JSON.stringify(error, Object.getOwnPropertyNames(error), 2), 'error');
+      }
+    }
+
+    // Log initial system info
+    log('System Information:', 'info');
+    log(`User Agent: ${navigator.userAgent}`, 'info');
+    log('Audio Support:', 'info');
+    log(`- Audio Element: ${typeof Audio !== 'undefined'}`, 'info');
+    log(`- AudioContext: ${typeof (window.AudioContext || window.webkitAudioContext) !== 'undefined'}`, 'info');
+    log(`- MP3 Support: ${new Audio().canPlayType('audio/mpeg')}`, 'info');
+    log(`- WebM Support: ${new Audio().canPlayType('audio/webm')}`, 'info');
+    log(`- OGG Support: ${new Audio().canPlayType('audio/ogg')}`, 'info');
+    
+    // Check if running from file:// protocol
+    if (window.location.protocol === 'file:') {
+      log('WARNING: Running from file:// protocol. Some browsers restrict audio playback and API access when running from local files. Consider using a web server.', 'error');
+    }
+  </script>
+</body>
+</html>
