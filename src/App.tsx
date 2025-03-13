@@ -6,7 +6,7 @@ import type { Voice } from "./lib/elevenlabs";
 import { fetchVoices } from "./lib/elevenlabs";
 import { useToast } from "./components/ui/use-toast";
 import { Toaster } from "./components/ui/toaster";
-import defaultWorkout from './data/workout.md?raw';
+import defaultWorkout from './workouts/default.md?raw';
 
 function App() {
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>();
